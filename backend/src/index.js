@@ -4,6 +4,8 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import { pool } from './db.js';
 import authRouter from './routes/auth.js';
+import postsRouter from './routes/posts.js';
+import commentsRouter from './routes/comments.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +29,8 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/posts', postsRouter);
+app.use('/api/comments', commentsRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Bulunamadı' });
