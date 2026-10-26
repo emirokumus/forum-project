@@ -48,7 +48,7 @@ router.post('/login', async (req, res) => {
   }
 
   req.session.userId = user.id;
-  res.json({ user: { id: user.id, username: user.username } });
+  res.json({ user: { id: user.id, username: user.username, role: user.role } });
 });
 
 router.post('/logout', (req, res) => {
@@ -62,7 +62,14 @@ router.get('/me', async (req, res) => {
     return res.status(401).json({ error: 'Giriş yapılmamış' });
   }
 
-  const result = await pool.query('SELECT id, username, email FROM users WHERE id = $1', [req.session.userId]);
+  const result = await pool.query(
+    `SELECT id, username, email, role, created_at,
+       (SELECT COUNT(*) FROM posts WHERE user_id = users.id) AS post_count,
+       (SELECT COUNT(*) FROM comments WHERE user_id = users.id) AS comment_count
+     FROM users
+     WHERE id = $1`,
+    [req.session.userId],
+  );
   res.json({ user: result.rows[0] });
 });
 

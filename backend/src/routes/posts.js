@@ -5,14 +5,30 @@ import { requireAuth } from '../middleware/requireAuth.js';
 const router = Router();
 
 router.get('/', async (req, res) => {
+  const orderBy =
+    req.query.sort === 'top' ? 'score DESC, posts.created_at DESC' : 'posts.created_at DESC';
+
   const result = await pool.query(
     `SELECT posts.id, posts.title, posts.created_at, users.username,
        (SELECT COALESCE(SUM(value), 0) FROM post_votes WHERE post_id = posts.id) AS score,
        (SELECT COUNT(*) FROM comments WHERE post_id = posts.id) AS comment_count
      FROM posts
      JOIN users ON users.id = posts.user_id
-     ORDER BY posts.created_at DESC
+     ORDER BY ${orderBy}
      LIMIT 50`,
+  );
+  res.json({ posts: result.rows });
+});
+
+router.get('/mine', requireAuth, async (req, res) => {
+  const result = await pool.query(
+    `SELECT posts.id, posts.title, posts.created_at,
+       (SELECT COALESCE(SUM(value), 0) FROM post_votes WHERE post_id = posts.id) AS score,
+       (SELECT COUNT(*) FROM comments WHERE post_id = posts.id) AS comment_count
+     FROM posts
+     WHERE posts.user_id = $1
+     ORDER BY posts.created_at DESC`,
+    [req.session.userId],
   );
   res.json({ posts: result.rows });
 });
@@ -24,7 +40,7 @@ router.get('/:id', async (req, res) => {
   }
 
   const postResult = await pool.query(
-    `SELECT posts.id, posts.title, posts.body, posts.created_at, users.username,
+    `SELECT posts.id, posts.title, posts.body, posts.created_at, posts.updated_at, users.username,
        (SELECT COALESCE(SUM(value), 0) FROM post_votes WHERE post_id = posts.id) AS score
      FROM posts
      JOIN users ON users.id = posts.user_id
@@ -37,7 +53,7 @@ router.get('/:id', async (req, res) => {
   }
 
   const commentsResult = await pool.query(
-    `SELECT comments.id, comments.body, comments.created_at, users.username,
+    `SELECT comments.id, comments.body, comments.created_at, comments.updated_at, users.username,
        (SELECT COALESCE(SUM(value), 0) FROM comment_votes WHERE comment_id = comments.id) AS score
      FROM comments
      JOIN users ON users.id = comments.user_id
@@ -64,7 +80,7 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(201).json({ post: result.rows[0] });
   } catch (err) {
     if (err.code === '23514') {
-      return res.status(400).json({ error: 'Başlık en az 10, içerik en az 20 karakter olmalı' });
+      return res.status(400).json({ error: 'Başlık ve içerik boş olamaz, içerik en fazla 30.000 karakter olabilir' });
     }
     throw err;
   }
@@ -77,7 +93,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 
   const result = await pool.query(
-    'DELETE FROM posts WHERE id = $1 AND user_id = $2',
+    `DELETE FROM posts
+     WHERE id = $1
+       AND (user_id = $2 OR (SELECT role FROM users WHERE id = $2) = 'admin')`,
     [id, req.session.userId],
   );
   if (result.rowCount === 0) {
@@ -85,6 +103,35 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 
   res.json({ message: 'Gönderi silindi' });
+});
+
+router.patch('/:id', requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(404).json({ error: 'Gönderi bulunamadı' });
+  }
+
+  const { title, body } = req.body;
+  if (!title || !body) {
+    return res.status(400).json({ error: 'Başlık ve içerik zorunludur' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE posts SET title = $1, body = $2, updated_at = now()
+       WHERE id = $3 AND user_id = $4`,
+      [title, body, id, req.session.userId],
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Gönderi bulunamadı veya düzenleme yetkiniz yok' });
+    }
+    res.json({ message: 'Gönderi güncellendi' });
+  } catch (err) {
+    if (err.code === '23514') {
+      return res.status(400).json({ error: 'Başlık ve içerik boş olamaz, içerik en fazla 30.000 karakter olabilir' });
+    }
+    throw err;
+  }
 });
 
 router.post('/:id/comments', requireAuth, async (req, res) => {
@@ -106,7 +153,7 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
     res.status(201).json({ comment: result.rows[0] });
   } catch (err) {
     if (err.code === '23514') {
-      return res.status(400).json({ error: 'Yorum en az 20 karakter olmalı' });
+      return res.status(400).json({ error: 'Yorum boş olamaz, en fazla 30.000 karakter olabilir' });
     }
     if (err.code === '23503') {
       return res.status(404).json({ error: 'Gönderi bulunamadı' });
