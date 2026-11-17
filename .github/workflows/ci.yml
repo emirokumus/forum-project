@@ -30,7 +30,7 @@ jobs:
       - name: Lint frontend
         working-directory: frontend
         run: npm run lint
-        
+
       - name: Audit frontend dependencies
         working-directory: frontend
         run: npm audit --audit-level=high
@@ -38,3 +38,15 @@ jobs:
       - name: Audit backend dependencies
         working-directory: backend
         run: npm audit --audit-level=high
+
+  docker:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build backend image
+        run: docker build -t kodsor-backend:${{ github.sha }} ./backend
+
+      - name: Build frontend image
+        run: docker build -t kodsor-frontend:${{ github.sha }} ./frontend      
