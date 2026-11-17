@@ -21,6 +21,7 @@ services:
 
   backend:
     build: ./backend
+    image: kodsor-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://forum_app:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -36,6 +37,7 @@ services:
 
   frontend:
     build: ./frontend
+    image: kodsor-frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:80"
